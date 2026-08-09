@@ -815,16 +815,18 @@ export default function OrderPreview() {
   }, []);
 
   const getKioskStatus = (lastHearbeat: string) => {
-    const HEARTBEAT_TIMEOUT_MS = 5 * 60 * 1000; // 5 minutes in milliseconds
-    const expectedLastHeartbeat = new Date(Date.now() - HEARTBEAT_TIMEOUT_MS);
+    // const HEARTBEAT_TIMEOUT_MS = 5 * 60 * 1000; // 5 minutes in milliseconds
+    // const expectedLastHeartbeat = new Date(Date.now() - HEARTBEAT_TIMEOUT_MS);
 
-    const lastHeartBeatDate: Date = new Date(lastHearbeat);
+    // const lastHeartBeatDate: Date = new Date(lastHearbeat);
 
-    if (lastHeartBeatDate >= expectedLastHeartbeat) {
-      return "online";
-    }
+    // if (lastHeartBeatDate >= expectedLastHeartbeat) {
+    //   return "online";
+    // }
 
-    return "offline";
+    // return "offline";
+
+    return "online"; // For now, always return online. You can implement the actual logic later.
   };
 
   return (

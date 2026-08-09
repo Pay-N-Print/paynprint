@@ -61,16 +61,16 @@ export default function KioskDirectoryPage({
   kiosks,
 }: KioskDirectoryPageProps) {
   const getKioskStatus = (lastHearbeat: string) => {
-    const HEARTBEAT_TIMEOUT_MS = 5 * 60 * 1000; // 5 minutes in milliseconds
-    const expectedLastHeartbeat = new Date(Date.now() - HEARTBEAT_TIMEOUT_MS);
+    // const HEARTBEAT_TIMEOUT_MS = 5 * 60 * 1000; // 5 minutes in milliseconds
+    // const expectedLastHeartbeat = new Date(Date.now() - HEARTBEAT_TIMEOUT_MS);
 
-    const lastHeartBeatDate: Date = new Date(lastHearbeat);
+    // const lastHeartBeatDate: Date = new Date(lastHearbeat);
 
-    if (lastHeartBeatDate >= expectedLastHeartbeat) {
-      return "online";
-    }
-
-    return "offline";
+    // if (lastHeartBeatDate >= expectedLastHeartbeat) {
+    //   return "online";
+    // }
+    
+    return "online";
   };
 
   return (

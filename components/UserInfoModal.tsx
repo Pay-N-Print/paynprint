@@ -6,12 +6,13 @@ import { User } from "@/app/kiosk/[kioskId]/review/[draftId]/page"
 interface Props {
   isOpen: boolean;
   onConfirm: (phone: string) => void;
-    onSkip: () => void;
-    user?: User;
+  onSkip: () => void;
+  user?: User;
+  initialPhone?: string;
 }
 
-export default function UserInfoModal({ isOpen, onConfirm, onSkip, user }: Props) {
-  const [rawDigits, setRawDigits] = useState("");
+export default function UserInfoModal({ isOpen, onConfirm, initialPhone, onSkip, user }: Props) {
+  const [rawDigits, setRawDigits] = useState(initialPhone ? initialPhone.slice(2) : ""); // store only 10 digits, remove +91 if present
   const [error, setError] = useState("");
   const [visible, setVisible] = useState(false);
   const inputRef = useRef<HTMLInputElement>(null);

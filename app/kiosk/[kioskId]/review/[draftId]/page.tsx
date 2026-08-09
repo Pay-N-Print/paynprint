@@ -21,6 +21,8 @@ import Image from "next/image";
 import ShortLogo from "@/Images/pnp_logo-cropped.svg";
 import userInfoModal from "../../../../../components/UserInfoModal";
 import UserInfoModal from "../../../../../components/UserInfoModal";
+import RazorpayCheckout from "@/components/RazorpayCheckout";
+import Script from "next/script";
 
 interface OrderPreviewProps {
   fileName: string;
@@ -68,6 +70,9 @@ interface PrintDraftObject {
   paymentStatus: string | null;
   printJobId: string | null;
   completedAt: Date | null;
+  subtotal: string;
+  gstRatePercent: number;
+  gstAmount: string;
 }
 
 export interface CurrentFileDetails {
@@ -86,6 +91,7 @@ export interface CurrentKioskDetails {
   name: string;
   location: string;
   lastHeartBeat: string;
+  paperRemaining: number;
 }
 
 interface PrintDraftResponse {
@@ -201,6 +207,7 @@ declare global {
   }
 }
 
+
 export default function OrderPreview() {
   // {
   //   fileName,
@@ -221,15 +228,15 @@ export default function OrderPreview() {
   //   basePriceType,
   //   onConfirm,
   // }: OrderPreviewProps) {
-  const params = useParams();
+  const params = useParams<{ draftId: string; kioskId: string }>();
   const router = useRouter();
   const { showError } = useNotification();
   const draftId = params?.draftId;
   const kioskId = params?.kioskId;
 
   const pricing = {
-    bw: { single: 1.8, double: 3.5 },
-    color: { single: 8, double: 16 },
+    bw: { single: 1.86, double: 3.50 },
+    color: { single: 8.50, double: 16.50 },
   };
 
   const [isLoading, setIsLoading] = useState(true);
@@ -253,6 +260,197 @@ export default function OrderPreview() {
   const [printJobId, setPrintJobId] = useState<string>("");
   const [Total, setTotal] = useState<number>(0);
   const [phoneNumber, setPhoneNumber] = useState<string>();
+  const [loading, setLoading] = useState(false);
+
+  const [scriptReady, setScriptReady] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  const PHONE_CACHE_KEY = "pnp_phone";
+
+  function getCachedPhone(): string | null {
+    if (typeof window === "undefined") return null;
+    try {
+      console.log(
+        "Cached phone number retrieved:",
+        localStorage.getItem(PHONE_CACHE_KEY),
+      );
+      return localStorage.getItem(PHONE_CACHE_KEY);
+    } catch {
+      // Safari private browsing, storage disabled, etc.
+      return null;
+    }
+  }
+
+  function setCachedPhone(phone: string): void {
+    if (typeof window === "undefined") return;
+    try {
+      localStorage.setItem(PHONE_CACHE_KEY, phone);
+      console.log("Phone number cached:", phone);
+    } catch {
+      // non-fatal — just means it won't prefill next time
+    }
+  }
+
+  async function handlePay(phone?: string) {
+    console.log("Handling payment with phone:", phone);
+    setError(null);
+
+    if (!scriptReady || !window.Razorpay) {
+      showError(
+        getErrorMessage(
+          undefined,
+          "Payment gateway is still loading. Please try again in a moment.",
+        ),
+      );
+      return;
+    }
+
+    setLoading(true);
+
+    try {
+      // Step 1: create order server-side
+
+      const orderRes = await axios.post(
+        `${process.env.NEXT_PUBLIC_SERVER_URL}/api/payment/create-order`,
+        { draftId },
+        {
+          withCredentials: true,
+          headers: {
+            "Content-Type": "application/json",
+          },
+        },
+      );
+
+      if (!orderRes.data) {
+        const body = await orderRes.data.catch(() => ({}));
+        throw new Error(body.error || "Could not start payment");
+      }
+
+      const order = await orderRes.data;
+
+      // Step 2: open Razorpay Standard Checkout modal
+      const options = {
+        key: order.key_id,
+        amount: order.amount,
+        currency: order.currency,
+        name: "PayNPrint",
+        description: "Print job payment",
+        order_id: order.order_id,
+        prefill: {
+          name: user?.name || "",
+          email: user?.email || "",
+          contact: phone || "",
+        },
+        method: {
+          upi: true,
+          card: false,
+          netbanking: false,
+          wallet: false,
+          paylater: false,
+        },
+        theme: { color: "#0f172a" },
+        handler: async (response: {
+          razorpay_order_id: string;
+          razorpay_payment_id: string;
+          razorpay_signature: string;
+        }) => {
+          setLoading(true);
+          setIsLoading(true);
+          setLoadingMessage("Confirming your payment");
+          try {
+            const verifyRes = await axios.post(
+              `${process.env.NEXT_PUBLIC_SERVER_URL}/api/payment/verify-payment`,
+              JSON.stringify({ ...response, draftId }),
+              {
+                withCredentials: true,
+                headers: {
+                  "Content-Type": "application/json",
+                },
+              },
+            );
+
+            const verifyBody = await verifyRes.data;
+
+            if (verifyRes.status !== 200 || !verifyBody.success) {
+              throw new Error(
+                verifyBody.error || "Payment verification failed",
+              );
+            }
+            setShowuserInfoPhoneModal(false);
+            setPrintJobId(verifyBody.printJobId);
+            setPaymentStatus("success");
+
+            // onSuccess({
+            //   printJobId: verifyBody.printJobId,
+            //   printCode: verifyBody.printCode,
+            //   expiresAt: verifyBody.expiresAt,
+            // });
+          } catch (err: any) {
+            setShowuserInfoPhoneModal(false);
+            setPaymentStatus("error");
+            const message = err.message || "Payment verification failed";
+            showError(getErrorMessage(message, "Payment verification failed."));
+          } finally {
+            setLoading(false);
+          }
+        },
+        modal: {
+          // User closed the modal without paying
+          ondismiss: () => {
+            setLoading(false);
+            setShowuserInfoPhoneModal(false);
+            setPaymentStatus("idle");
+            showError(getErrorMessage(undefined, "Payment cancelled."));
+          },
+        },
+      };
+
+      const rzp = new window.Razorpay(options);
+
+      // Payment failed inside the modal (card declined, etc.)
+      rzp.on("payment.failed", (resp: any) => {
+        setLoading(false);
+        setShowuserInfoPhoneModal(false);
+        setPaymentStatus("error");
+        showError(
+          getErrorMessage(undefined, "Payment failed. Please try again."),
+        );
+      });
+
+      rzp.open();
+    } catch (err: any) {
+      setLoading(false);
+      setShowuserInfoPhoneModal(false);
+      setPaymentStatus("error");
+      showError(
+        getErrorMessage(undefined, "Something went wrong. Please try again."),
+      );
+    }
+  }
+
+  const saveDraftPhoneNumber = async (phone: string) => {
+    console.log("Saving phone number to draft:", phone);
+    try {
+      await axios.patch(
+        `${process.env.NEXT_PUBLIC_SERVER_URL}/api/drafts/${draftId}/phone`,
+        { userPhone: phone },
+        {
+          withCredentials: true,
+          headers: {
+            "Content-Type": "application/json",
+          },
+        },
+      );
+    } catch (err: any) {
+      console.error("Error saving phone number to draft:", err);
+      showError(
+        getErrorMessage(
+          err?.response?.data?.error,
+          "Failed to save your phone number. You can still continue with payment.",
+        ),
+      );
+    }
+  };
 
   const calculateTotal = () => {
     const pages = currentFileDetails?.pageCount ?? 0;
@@ -284,23 +482,23 @@ export default function OrderPreview() {
     return `PNP-${randomStr}-${timestamp}`;
   };
 
-  function callback(response: string) {
-    if (response === "USER_CANCEL") {
-      /* Add merchant's logic if they have any custom thing to trigger on UI after the transaction is cancelled by the user*/
-      console.log("Transaction cancelled by user");
-      setPaymentStatus("idle");
-      setIsLoading(false);
-      setRes(undefined);
-      return;
-    } else if (response === "CONCLUDED") {
-      console.log("Transaction concluded successfully");
-      setShowuserInfoPhoneModal(false);
-      setPaymentStatus("success");
-      // setIsLoading(false);
-      /* Add merchant's logic if they have any custom thing to trigger on UI after the transaction is in terminal state*/
-      return;
-    }
-  }
+  // function callback(response: string) {
+  //   if (response === "USER_CANCEL") {
+  //     /* Add merchant's logic if they have any custom thing to trigger on UI after the transaction is cancelled by the user*/
+  //     console.log("Transaction cancelled by user");
+  //     setPaymentStatus("idle");
+  //     setIsLoading(false);
+  //     setRes(undefined);
+  //     return;
+  //   } else if (response === "CONCLUDED") {
+  //     console.log("Transaction concluded successfully");
+  //     setShowuserInfoPhoneModal(false);
+  //     setPaymentStatus("success");
+  //     // setIsLoading(false);
+  //     /* Add merchant's logic if they have any custom thing to trigger on UI after the transaction is in terminal state*/
+  //     return;
+  //   }
+  // }
 
   const updateJobPaymentStatus = async (jobId: string, status: string) => {
     setIsLoading(true);
@@ -327,58 +525,102 @@ export default function OrderPreview() {
     }
   };
 
-  const handlePayment = async () => {
-    setIsLoading(true);
-    setLoadingMessage("Redirecting to payment gateway");
-    setPaymentStatus("processing");
-    const merchantOrderId = generateMerchantOrderId();
-    try {
-      const ApiRes = await axios.post("/api/phonepe/createPayment", {
-        merchantOrderId: merchantOrderId,
-        amount: Number(currentDraftDetails!.totalPrice) * 100, // Amount in paise
-      });
-      console.log("Response:", ApiRes.data);
-      setRes(ApiRes.data as PaymentResponse);
+  // const handlePayment = async () => {
+  //   setIsLoading(true);
+  //   setLoadingMessage("Redirecting to payment gateway");
+  //   setPaymentStatus("processing");
+  //   const merchantOrderId = generateMerchantOrderId();
+  //   try {
+  //     const ApiRes = await axios.post("/api/phonepe/createPayment", {
+  //       merchantOrderId: merchantOrderId,
+  //       amount: Number(currentDraftDetails!.totalPrice) * 100, // Amount in paise
+  //     });
+  //     console.log("Response:", ApiRes.data);
+  //     setRes(ApiRes.data as PaymentResponse);
 
-      if (window && window.PhonePeCheckout && window.PhonePeCheckout.transact) {
-        console.log("PhonePeCheckout is available", window.PhonePeCheckout);
-        console.log("res : ", res);
-        console.log("response : ", ApiRes.data);
-        window.PhonePeCheckout.transact({
-          tokenUrl: ApiRes.data?.payData.redirectUrl,
-          callback,
-          type: "IFRAME",
-        });
-      }
-    } catch (err: any) {
-      console.error("Axios error:", err.response?.data || err.message);
-      showError(
-        getErrorMessage(
-          err?.response?.data?.error,
-          NotificationMessages.PAYMENT_INIT,
-        ),
-      );
-      setPaymentStatus("error");
-      // setIsLoading(false);
-    }
-  };
+  //     if (window && window.PhonePeCheckout && window.PhonePeCheckout.transact) {
+  //       console.log("PhonePeCheckout is available", window.PhonePeCheckout);
+  //       console.log("res : ", res);
+  //       console.log("response : ", ApiRes.data);
+  //       window.PhonePeCheckout.transact({
+  //         tokenUrl: ApiRes.data?.payData.redirectUrl,
+  //         callback,
+  //         type: "IFRAME",
+  //       });
+  //     }
+  //   } catch (err: any) {
+  //     console.error("Axios error:", err.response?.data || err.message);
+  //     showError(
+  //       getErrorMessage(
+  //         err?.response?.data?.error,
+  //         NotificationMessages.PAYMENT_INIT,
+  //       ),
+  //     );
+  //     setPaymentStatus("error");
+  //     // setIsLoading(false);
+  //   }
+  // };
 
   const handleUserPayClick = async () => {
+    console.log("Handling user pay click");
     setIsLoading(true);
-    setLoadingMessage("Fetching Details");
+    setLoadingMessage("Fetching Your Details");
+    if (
+      currentFileDetails?.pageCount &&
+      currentDraftDetails?.copies &&
+      currentKioskDetails?.paperRemaining
+    ) {
+      if (
+        currentFileDetails?.pageCount * currentDraftDetails?.copies >
+        currentKioskDetails?.paperRemaining
+      ) {
+        showError(
+          getErrorMessage(
+            undefined,
+            "Not enough paper in the print booth to complete this print order. Please contact support.",
+          ),
+        );
+        setIsLoading(false);
+        return;
+      }
+    }
+    console.log("page count ok");
     try {
       const userDetails = await axios.get(
         `${process.env.NEXT_PUBLIC_SERVER_URL}/api/auth/user/${draftId}`,
         { withCredentials: true },
+      );
+      console.log(
+        "Auth user details response:",
+        userDetails,
+        userDetails.status,
       );
       if (userDetails.status === 200) {
         const userDataResponse = userDetails.data as userDetailsReponse;
         if (userDataResponse.isLoggedIn) {
           SetUserLoggedIn(true);
           setUser(userDataResponse.user);
+          const prefillPhone =
+            userDataResponse.user?.phoneNumber ||
+            userDataResponse.draftPhoneNumber ||
+            getCachedPhone() ||
+            undefined;
+
+          console.log("Prefill phone number:", prefillPhone);
+
+          if (prefillPhone) {
+            setPhoneNumber(prefillPhone);
+          }
           setShowuserInfoPhoneModal(true);
           setIsLoading(false);
           return;
+        }
+        const prefillPhone = getCachedPhone() || undefined;
+
+        console.log("Prefill phone number:", prefillPhone);
+
+        if (prefillPhone) {
+          setPhoneNumber(prefillPhone);
         }
         setShowuserInfoPhoneModal(true);
       }
@@ -396,39 +638,39 @@ export default function OrderPreview() {
     }
   };
 
-  const createPrintJob = async () => {
-    setIsLoading(true);
-    setLoadingMessage("Getting everything ready for your print");
-    try {
-      const printJobResponse = await axios.post(
-        `${process.env.NEXT_PUBLIC_SERVER_URL}/api/printorder/`,
-        {
-          draftId: draftId,
-        },
-        {
-          withCredentials: true,
-          headers: {
-            "Content-Type": "application/json",
-          },
-        },
-      );
+  // const createPrintJob = async () => {
+  //   setIsLoading(true);
+  //   setLoadingMessage("Getting everything ready for your print");
+  //   try {
+  //     const printJobResponse = await axios.post(
+  //       `${process.env.NEXT_PUBLIC_SERVER_URL}/api/printorder/`,
+  //       {
+  //         draftId: draftId,
+  //       },
+  //       {
+  //         withCredentials: true,
+  //         headers: {
+  //           "Content-Type": "application/json",
+  //         },
+  //       },
+  //     );
 
-      if (printJobResponse.status === 201) {
-        const printJobResponseData = printJobResponse.data as PrintJobResponse;
-        setPrintJobId(printJobResponseData.job.id);
-        await handlePayment();
-        // setPaymentStatus("success");
-      }
-    } catch (err: any) {
-      console.error("Error creating print job:", err);
-      showError(
-        getErrorMessage(
-          err?.response?.data?.error,
-          NotificationMessages.PRINT_JOB_CREATE,
-        ),
-      );
-    }
-  };
+  //     if (printJobResponse.status === 201) {
+  //       const printJobResponseData = printJobResponse.data as PrintJobResponse;
+  //       setPrintJobId(printJobResponseData.job.id);
+  //       await handlePayment();
+  //       // setPaymentStatus("success");
+  //     }
+  //   } catch (err: any) {
+  //     console.error("Error creating print job:", err);
+  //     showError(
+  //       getErrorMessage(
+  //         err?.response?.data?.error,
+  //         NotificationMessages.PRINT_JOB_CREATE,
+  //       ),
+  //     );
+  //   }
+  // };
 
   const sendEmail = async () => {
     setIsLoading(true);
@@ -550,12 +792,8 @@ export default function OrderPreview() {
 
   useEffect(() => {
     if (paymentStatus === "success") {
-      setIsLoading(true);
-      setLoadingMessage("Updating Payment Status");
-      setLoadingMessage("Sending Email");
-      sendEmail();
-      sendWhatsappMessage();
-      setIsLoading(false);
+      // sendEmail(); // Should be from backend
+      // sendWhatsappMessage(); // Should be from backend
       router.push(`/kiosk/${kioskId}/success/${printJobId}`);
     }
   }, [paymentStatus]);
@@ -593,6 +831,11 @@ export default function OrderPreview() {
 
   return (
     <div className="min-h-screen bg-[#F7F5EF] w-full max-w-full">
+      <Script
+        src="https://checkout.razorpay.com/v1/checkout.js"
+        onLoad={() => setScriptReady(true)}
+        strategy="afterInteractive"
+      />
       {isLoading ? (
         <Loading text={loadingMessage} />
       ) : (
@@ -618,9 +861,13 @@ export default function OrderPreview() {
           </header>
           <UserInfoModal
             isOpen={showUserInfoModal}
+            initialPhone={phoneNumber}
             onConfirm={(phone) => {
               setPhoneNumber(phone);
-              createPrintJob();
+              setCachedPhone(phone);
+              saveDraftPhoneNumber(phone);
+              console.log("User confirmed phone number:", phone);
+              handlePay(phone);
             }}
             onSkip={() => {
               setShowuserInfoPhoneModal(false);
@@ -709,7 +956,7 @@ export default function OrderPreview() {
                   </div>
                 </section>
 
-                <section>
+                {/* <section>
                   <div className="mb-5 flex items-center gap-3">
                     <span className="font-cormorant text-5xl leading-none text-[#8FD4D0] sm:text-6xl">
                       02
@@ -785,6 +1032,82 @@ export default function OrderPreview() {
                         </div>
                       </div>
                     </div>
+                  </div>
+                </section> */}
+
+                <section>
+                  <div className="mb-5 flex items-center gap-3">
+                    <span className="font-cormorant text-5xl leading-none text-[#8FD4D0] sm:text-6xl">
+                      02
+                    </span>
+                    <h3 className="font-cormorant text-4xl font-bold leading-none text-[#1F2A44] sm:text-5xl">
+                      Pricing
+                    </h3>
+                  </div>
+
+                  <div className="rounded-3xl border border-[#1F2A44]/10 bg-white p-5 shadow-[0_8px_20px_rgba(31,42,68,0.08)] sm:p-6 md:p-7">
+                    <div className="space-y-3 text-sm font-semibold sm:text-base">
+                      <PriceRow
+                        label="Base Price"
+                        value={`${currency.format(Number(currentDraftDetails?.pricePerPage))} / ${currentDraftDetails?.duplex ? "sheet" : "page"}`}
+                      />
+                      <PriceRow
+                        label="Subtotal"
+                        value={currency.format(
+                          Number(currentDraftDetails?.subtotal),
+                        )}
+                      />
+                      <PriceRow
+                        label={`GST (${currentDraftDetails?.gstRatePercent ?? 18}%)`}
+                        value={currency.format(
+                          Number(currentDraftDetails?.gstAmount),
+                        )}
+                      />
+                    </div>
+
+                    <div className="my-5 h-px bg-[#E5E0D6]" />
+
+                    <div className="flex items-center justify-between">
+                      <p className="font-cormorant text-[34px] font-bold leading-none text-[#1F2A44] sm:text-[38px]">
+                        Total
+                      </p>
+                      <p className="text-[30px] font-bold leading-none text-[#FFBF00] sm:text-[35px]">
+                        {currency.format(
+                          Number(currentDraftDetails?.totalPrice),
+                        )}
+                      </p>
+                    </div>
+                  <div className="mt-6 bg-[#FFBF00]/5 rounded-2xl p-6 border border-[#FFBF00]/20">
+                    <h4 className="font-bold text-[#1F2A44] mb-3">
+                      Pricing Guide
+                    </h4>
+                    <div className="space-y-2 text-sm">
+                      <div className="flex justify-between">
+                        <span className="text-[#1F2A44]/70">B&W Single</span>
+                        <span className="font-semibold text-[#1F2A44]">
+                          ₹{pricing["bw"].single}/page
+                        </span>
+                      </div>
+                      <div className="flex justify-between">
+                        <span className="text-[#1F2A44]/70">B&W Double</span>
+                        <span className="font-semibold text-[#1F2A44]">
+                          ₹{pricing["bw"].double}/page
+                        </span>
+                      </div>
+                      <div className="flex justify-between">
+                        <span className="text-[#1F2A44]/70">Color Single</span>
+                        <span className="font-semibold text-[#1F2A44]">
+                          ₹{pricing["color"].single}/page
+                        </span>
+                      </div>
+                      <div className="flex justify-between">
+                        <span className="text-[#1F2A44]/70">Color Double</span>
+                        <span className="font-semibold text-[#1F2A44]">
+                          ₹{pricing["color"].double}/page
+                        </span>
+                      </div>
+                    </div>
+                  </div>
                   </div>
                 </section>
 

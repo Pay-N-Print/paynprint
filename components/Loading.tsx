@@ -69,7 +69,7 @@ import Robot from "./Robot";
 export default function Loading({ text }: { text: string }) {
   return (
     <div
-      className="w-screen h-screen flex items-center justify-center bg-[#F7F5EF]"
+      className="fixed inset-0 flex items-center justify-center bg-[#F7F5EF]"
       role="status"
       aria-live="polite"
       aria-label={text}

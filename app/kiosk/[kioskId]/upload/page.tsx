@@ -219,8 +219,8 @@ export default function UploadPage() {
   const [loadingMessage, setLoadingMessage] = useState<string>("");
 
   const pricing = {
-    bw: { single: 1.8, double: 3.5 },
-    color: { single: 8, double: 16 },
+    bw: { single: 1.86, double: 3.50 },
+    color: { single: 8.50, double: 16.50 },
   };
 
   const handleDrag = (e: React.DragEvent<HTMLDivElement>) => {
@@ -343,7 +343,6 @@ export default function UploadPage() {
           );
         }
         router.push(`review/${urlDraftId}`);
-        setIsLoading(false);
       } catch (err: any) {
         console.error("Error creating print job draft:", err);
         showError(
@@ -391,7 +390,6 @@ export default function UploadPage() {
           printDraftResponse.data as CreatePrintDraftResponse;
         setPrintDraftId(responseData.dId);
         router.push(`review/${responseData.dId}`);
-        setIsLoading(false);
       } catch (err: any) {
         console.error("Error creating print job draft:", err);
         showError(

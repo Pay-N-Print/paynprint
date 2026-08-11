@@ -7,6 +7,7 @@ import {
   Lock,
   PenIcon,
   X,
+  ChevronRight,
 } from "lucide-react";
 import { useEffect, useState } from "react";
 import axios from "axios";
@@ -207,7 +208,6 @@ declare global {
   }
 }
 
-
 export default function OrderPreview() {
   // {
   //   fileName,
@@ -235,8 +235,8 @@ export default function OrderPreview() {
   const kioskId = params?.kioskId;
 
   const pricing = {
-    bw: { single: 1.86, double: 3.50 },
-    color: { single: 8.50, double: 16.50 },
+    bw: { single: 1.9, double: 3.6 },
+    color: { single: 8.5, double: 16.5 },
   };
 
   const [isLoading, setIsLoading] = useState(true);
@@ -890,7 +890,9 @@ export default function OrderPreview() {
                   Review Your Order
                 </h2>
                 <p className="mt-2 text-base font-semibold text-[#1F2A44]/70 sm:text-lg">
-                  Preview, pay, print. Done.
+                  Preview
+                  <ChevronRight className="inline-block" /> pay <ChevronRight className="inline-block" />{" "}
+                  print <ChevronRight className="inline-block" /> Done.
                 </p>
               </header>
 
@@ -1077,37 +1079,41 @@ export default function OrderPreview() {
                         )}
                       </p>
                     </div>
-                  <div className="mt-6 bg-[#FFBF00]/5 rounded-2xl p-6 border border-[#FFBF00]/20">
-                    <h4 className="font-bold text-[#1F2A44] mb-3">
-                      Pricing Guide
-                    </h4>
-                    <div className="space-y-2 text-sm">
-                      <div className="flex justify-between">
-                        <span className="text-[#1F2A44]/70">B&W Single</span>
-                        <span className="font-semibold text-[#1F2A44]">
-                          ₹{pricing["bw"].single}/page
-                        </span>
-                      </div>
-                      <div className="flex justify-between">
-                        <span className="text-[#1F2A44]/70">B&W Double</span>
-                        <span className="font-semibold text-[#1F2A44]">
-                          ₹{pricing["bw"].double}/page
-                        </span>
-                      </div>
-                      <div className="flex justify-between">
-                        <span className="text-[#1F2A44]/70">Color Single</span>
-                        <span className="font-semibold text-[#1F2A44]">
-                          ₹{pricing["color"].single}/page
-                        </span>
-                      </div>
-                      <div className="flex justify-between">
-                        <span className="text-[#1F2A44]/70">Color Double</span>
-                        <span className="font-semibold text-[#1F2A44]">
-                          ₹{pricing["color"].double}/page
-                        </span>
+                    <div className="mt-6 bg-[#FFBF00]/5 rounded-2xl p-6 border border-[#FFBF00]/20">
+                      <h4 className="font-bold text-[#1F2A44] mb-3">
+                        Pricing Guide
+                      </h4>
+                      <div className="space-y-2 text-sm">
+                        <div className="flex justify-between">
+                          <span className="text-[#1F2A44]/70">B&W Single</span>
+                          <span className="font-semibold text-[#1F2A44]">
+                            ₹{pricing["bw"].single}/page
+                          </span>
+                        </div>
+                        <div className="flex justify-between">
+                          <span className="text-[#1F2A44]/70">B&W Double</span>
+                          <span className="font-semibold text-[#1F2A44]">
+                            ₹{pricing["bw"].double}/page
+                          </span>
+                        </div>
+                        <div className="flex justify-between">
+                          <span className="text-[#1F2A44]/70">
+                            Color Single
+                          </span>
+                          <span className="font-semibold text-[#1F2A44]">
+                            ₹{pricing["color"].single}/page
+                          </span>
+                        </div>
+                        <div className="flex justify-between">
+                          <span className="text-[#1F2A44]/70">
+                            Color Double
+                          </span>
+                          <span className="font-semibold text-[#1F2A44]">
+                            ₹{pricing["color"].double}/page
+                          </span>
+                        </div>
                       </div>
                     </div>
-                  </div>
                   </div>
                 </section>
 

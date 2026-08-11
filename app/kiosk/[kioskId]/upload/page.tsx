@@ -219,7 +219,7 @@ export default function UploadPage() {
   const [loadingMessage, setLoadingMessage] = useState<string>("");
 
   const pricing = {
-    bw: { single: 1.86, double: 3.50 },
+    bw: { single: 1.90, double: 3.60 },
     color: { single: 8.50, double: 16.50 },
   };
 

@@ -70,7 +70,7 @@ export default function KioskDirectoryPage({
       return "online";
     }
     
-    return "online";
+    return "offline";
   };
 
   return (

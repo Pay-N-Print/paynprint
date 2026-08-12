@@ -812,6 +812,9 @@ export default function OrderPreview() {
       console.log("PhonePe script loaded", window.PhonePeCheckout);
     };
     document.body.appendChild(script);
+    if (typeof window !== "undefined" && window.Razorpay) {
+      setScriptReady(true);
+    }
   }, []);
 
   const getKioskStatus = (lastHearbeat: string) => {
@@ -891,8 +894,9 @@ export default function OrderPreview() {
                 </h2>
                 <p className="mt-2 text-base font-semibold text-[#1F2A44]/70 sm:text-lg">
                   Preview
-                  <ChevronRight className="inline-block" /> pay <ChevronRight className="inline-block" />{" "}
-                  print <ChevronRight className="inline-block" /> Done.
+                  <ChevronRight className="inline-block" /> pay{" "}
+                  <ChevronRight className="inline-block" /> print{" "}
+                  <ChevronRight className="inline-block" /> Done.
                 </p>
               </header>
 
